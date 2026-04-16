@@ -103,7 +103,7 @@ Enhancing personalization of stress management recommendations.
 
 # Author
 
-Aasritha Devi Narra  
+Hari Priya 
 B.Tech Computer Science and Engineering (Artificial Intelligence and Machine Learning)  
 SRK Institute of Technology
 
