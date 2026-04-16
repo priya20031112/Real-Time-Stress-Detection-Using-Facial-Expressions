@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stress Detection System</title>
+
+<style>
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1f1c2c, #928dab);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: "Segoe UI", sans-serif;
+    color: white;
+}
+
+.card {
+    width: 950px;
+    padding: 30px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(25px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+button {
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ff6a88, #ff99ac);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+}
+
+video {
+    width: 100%;
+    border-radius: 14px;
+    border: 3px solid rgba(255,255,255,0.3);
+}
+
+.result {
+    background: rgba(255,255,255,0.15);
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.bar {
+    height: 14px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff416c, #ff4b2b);
+}
+
+.warning {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #ff4b2b, #ff416c);
+    font-weight: bold;
+}
+
+.legend {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.12);
+    font-size: 14px;
+}
+
+.legend span {
+    display: block;
+    margin-top: 4px;
+}
+
+.hidden {
+    display: none;
+}
+
+a.watch-link {
+    margin-left: 10px;
+    color: #ffd700;
+    text-decoration: none;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+<div class="card">
+
+<div id="welcome-screen">
+    <h1>Welcome to Stress Detection System</h1>
+    <button onclick="openSystem()">Start Analysis</button>
+</div>
+
+<div id="main-system" class="hidden">
+    <h1>Real-Time Stress Detection</h1>
+
+    <div class="grid">
+        <div>
+            <video id="video" autoplay></video>
+            <canvas id="canvas" width="480" height="360" style="display:none;"></canvas>
+            <button onclick="capture()">Capture & Analyze</button>
+            <button onclick="retake()">Retake Image</button>
+        </div>
+
+        <div class="result" id="result">
+            <p><b>Emotion:</b> —</p>
+            <p><b>Stress Level:</b> —</p>
+            <p><b>Stress Percentage:</b> —</p>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<script>
+let video;
+let lastStressLevel = "";
+let recommendationIndex = {
+    "Low Stress": 0,
+    "Medium Stress": 0,
+    "High Stress": 0
+};
+
+function openSystem() {
+    document.getElementById("welcome-screen").classList.add("hidden");
+    document.getElementById("main-system").classList.remove("hidden");
+
+    video = document.getElementById("video");
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => video.srcObject = stream);
+}
+
+function capture() {
+    const canvas = document.getElementById("canvas");
+    const result = document.getElementById("result");
+    const ctx = canvas.getContext("2d");
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(blob => {
+        const fd = new FormData();
+        fd.append("image", blob, "frame.jpg");
+
+        fetch("/analyze", { method: "POST", body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) return;
+
+            const percent100 = Math.round((data.stress_percentage / 40) * 100);
+            const stressLevel = data.stress_level;
+            const allRecs = data.recommendations;
+
+            if (lastStressLevel !== stressLevel) {
+                recommendationIndex[stressLevel] = 0;
+            }
+
+            lastStressLevel = stressLevel;
+
+            let start = recommendationIndex[stressLevel];
+            let end = start + 2;
+
+            if (end > allRecs.length) {
+                start = 0;
+                end = 2;
+                recommendationIndex[stressLevel] = 0;
+            }
+
+            const currentRecs = allRecs.slice(start, end);
+            recommendationIndex[stressLevel] += 2;
+
+            const recHTML = currentRecs.map(r => {
+                return `<li>${r.text}
+                    <a href="${r.link}" target="_blank" style="margin-left:10px;color:#ffd700;text-decoration:none;">
+                        ▶ Watch
+                    </a>
+                </li>`;
+            }).join("");
+
+            const warningHTML = data.warning
+                ? `<div class="warning">⚠ High Stress Detected</div>`
+                : "";
+
+            result.innerHTML = `
+                <p><b>Emotion:</b> ${data.emotion}</p>
+                <p><b>Stress Level:</b> ${stressLevel} (${data.stress_percentage} / 40)</p>
+                <p><b>Stress Percentage:</b> ${percent100}%</p>
+
+                <div class="bar">
+                    <div class="fill" style="width:${percent100}%"></div>
+                </div>
+
+                ${warningHTML}
+
+                <p><b>Recommendations</b></p>
+                <ul>${recHTML}</ul>
+
+                <button onclick="userFeedback('better')">I feel better</button>
+                <button onclick="userFeedback('same')">Still stressed</button>
+            `;
+        });
+    }, "image/jpeg");
+}
+
+function userFeedback(status) {
+    if (status === "better") {
+        alert("Great! Continue maintaining healthy habits.");
+    } else {
+        capture();  // Show next 2 suggestions
+    }
+}
+
+function retake() {
+    lastStressLevel = "";
+    recommendationIndex = {
+        "Low Stress": 0,
+        "Medium Stress": 0,
+        "High Stress": 0
+    };
+
+    document.getElementById("result").innerHTML = `
+        <p><b>Emotion:</b> —</p>
+        <p><b>Stress Level:</b> —</p>
+        <p><b>Stress Percentage:</b> —</p>
+    `;
+}
+</script>
+
+</body>
+</html>
